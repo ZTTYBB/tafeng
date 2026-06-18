@@ -1,4 +1,4 @@
-import type { AppSettings, CommandHistoryEntry, RemoteFile, ServerProfile } from "../../shared/types";
+import type { AppSettings, CommandHistoryEntry, ServerProfile } from "../../shared/types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -39,9 +39,5 @@ export const api = {
   deleteConnection: (id: string) => request<{ ok: boolean }>(`/api/connections/${id}`, { method: "DELETE" }),
   commandHistory: (limit = 200, offset = 0) =>
     request<{ items: CommandHistoryEntry[]; total: number }>(`/api/command-history?limit=${limit}&offset=${offset}`),
-  clearCommandHistory: () => request<{ ok: boolean }>("/api/command-history", { method: "DELETE" }),
-  files: (path: string) => request<RemoteFile[]>(`/api/files?path=${encodeURIComponent(path)}`),
-  readFile: (path: string) => request<{ path: string; content: string }>(`/api/files/read?path=${encodeURIComponent(path)}`),
-  writeFile: (path: string, content: string) =>
-    request<{ ok: boolean; savedAt: string }>("/api/files/write", { method: "POST", body: JSON.stringify({ path, content }) })
+  clearCommandHistory: () => request<{ ok: boolean }>("/api/command-history", { method: "DELETE" })
 };

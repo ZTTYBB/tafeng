@@ -28,6 +28,7 @@ export default function App() {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [notice, setNotice] = useState("");
+  const [sshSocket, setSshSocket] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     api
@@ -57,6 +58,10 @@ export default function App() {
 
   const handleCommandSubmitted = useCallback(() => {
     setHistoryRefreshKey((key) => key + 1);
+  }, []);
+
+  const handleSocketChange = useCallback((socket: WebSocket | null) => {
+    setSshSocket(socket);
   }, []);
 
   function connectProfile(id: string) {
@@ -145,8 +150,9 @@ export default function App() {
             disconnectedLabel={t("disconnected")}
             onMetrics={handleMetrics}
             onCommandSubmitted={handleCommandSubmitted}
+            onSocketChange={handleSocketChange}
           />
-          <FileEditor t={t} />
+          <FileEditor socket={sshSocket} t={t} />
           <CommandHistoryPanel refreshKey={historyRefreshKey} t={t} />
         </div>
         <MonitorPanel metrics={metrics} processes={processes} t={t} />

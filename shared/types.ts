@@ -75,4 +75,17 @@ export type TerminalMessage =
   | { type: "resize"; cols: number; rows: number }
   | { type: "output"; data: string }
   | { type: "metrics"; metrics: ServerMetrics; processes: ProcessInfo[] }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // SFTP — client → worker
+  | { type: "sftp-ls"; requestId: string; path: string }
+  | { type: "sftp-read"; requestId: string; path: string }
+  | { type: "sftp-write"; requestId: string; path: string; content: string }
+  | { type: "sftp-upload"; requestId: string; path: string; chunk: string; offset: number; done: boolean }
+  | { type: "sftp-download"; requestId: string; path: string }
+  // SFTP — worker → client
+  | { type: "sftp-ls-result"; requestId: string; files: RemoteFile[] }
+  | { type: "sftp-read-result"; requestId: string; path: string; content: string }
+  | { type: "sftp-write-result"; requestId: string; ok: boolean }
+  | { type: "sftp-upload-progress"; requestId: string; offset: number; done: boolean }
+  | { type: "sftp-download-chunk"; requestId: string; chunk: string; done: boolean }
+  | { type: "sftp-error"; requestId: string; message: string };

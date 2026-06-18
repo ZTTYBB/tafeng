@@ -64,7 +64,19 @@ const messages = {
     searchHistory: "搜索命令、VPS、用户",
     emptyHistory: "暂无历史记录",
     historyLoadFailed: "历史记录加载失败",
-    unnamedVps: "未命名 VPS"
+    unnamedVps: "未命名 VPS",
+    fileManager: "文件管理",
+    noSshConnection: "请先连接 SSH 后使用文件管理",
+    uploading: "上传中...",
+    downloading: "下载中...",
+    uploadSuccess: "上传成功",
+    uploadFailed: "上传失败",
+    downloadFailed: "下载失败",
+    parentDir: "上级目录",
+    emptyDir: "空目录",
+    fileTooLarge: "文件过大，无法预览",
+    readError: "读取失败",
+    writeError: "写入失败"
   },
   en: {
     appName: "Tafeng",
@@ -129,7 +141,19 @@ const messages = {
     searchHistory: "Search commands, VPS, user",
     emptyHistory: "No command history",
     historyLoadFailed: "Failed to load command history",
-    unnamedVps: "Unnamed VPS"
+    unnamedVps: "Unnamed VPS",
+    fileManager: "File Manager",
+    noSshConnection: "Connect via SSH to use file manager",
+    uploading: "Uploading...",
+    downloading: "Downloading...",
+    uploadSuccess: "Upload successful",
+    uploadFailed: "Upload failed",
+    downloadFailed: "Download failed",
+    parentDir: "Parent directory",
+    emptyDir: "Empty directory",
+    fileTooLarge: "File too large to preview",
+    readError: "Read failed",
+    writeError: "Write failed"
   }
 } as const;
 

@@ -1,4 +1,4 @@
-import type { AppSettings, Language, RemoteFile, ServerProfile, TerminalMessage } from "../shared/types";
+import type { AppSettings, Language, ServerProfile, TerminalMessage } from "../shared/types";
 import { getCookie, handleLogin, json } from "./auth";
 import { createSshBridge } from "./sshBridge";
 import {
@@ -100,17 +100,7 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/files" && request.method === "GET") {
-      return json(sampleFiles(url.searchParams.get("path") ?? "/"));
-    }
 
-    if (url.pathname === "/api/files/read" && request.method === "GET") {
-      return json({ path: url.searchParams.get("path") ?? "/etc/nginx/nginx.conf", content: sampleConfig() });
-    }
-
-    if (url.pathname === "/api/files/write" && request.method === "POST") {
-      return json({ ok: true, savedAt: new Date().toISOString() });
-    }
 
     if (url.pathname === "/api/files/upload" && request.method === "POST") {
       const length = Number(request.headers.get("Content-Length") ?? "0");
@@ -197,24 +187,3 @@ function parseLanguage(value: string | null): Language {
   return value === "en" ? "en" : "zh";
 }
 
-function sampleFiles(path: string): RemoteFile[] {
-  return [
-    { name: "nginx.conf", path: `${path.replace(/\/$/, "")}/nginx.conf`, size: 2480, type: "file", modifiedAt: "2026-06-18T08:22:00.000Z" },
-    { name: "sites-enabled", path: `${path.replace(/\/$/, "")}/sites-enabled`, size: 4096, type: "directory", modifiedAt: "2026-06-17T19:10:00.000Z" },
-    { name: "app.env", path: `${path.replace(/\/$/, "")}/app.env`, size: 420, type: "file", modifiedAt: "2026-06-16T12:00:00.000Z" }
-  ];
-}
-
-function sampleConfig() {
-  return [
-    "server {",
-    "  listen 80;",
-    "  server_name example.com;",
-    "",
-    "  location / {",
-    "    proxy_pass http://127.0.0.1:3000;",
-    "    proxy_set_header Host $host;",
-    "  }",
-    "}"
-  ].join("\n");
-}

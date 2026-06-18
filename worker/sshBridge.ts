@@ -1,12 +1,13 @@
 import { Buffer } from "node:buffer";
 import { Duplex } from "node:stream";
 import { connect } from "cloudflare:sockets";
-import { Client, type ClientChannel } from "ssh2";
-import type { Language, ServerProfile, TerminalMessage } from "../shared/types";
+import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
+import type { Language, RemoteFile, ServerProfile, TerminalMessage } from "../shared/types";
 
 export type SshBridge = {
   handleClientMessage(message: TerminalMessage): void;
   close(): void;
+  sftpSession: SFTPWrapper | null;
 };
 
 type SshBridgeOptions = {
@@ -28,9 +29,14 @@ export function createSshBridge(socket: WebSocket, options: SshBridgeOptions): S
 
   let conn: Client | null = null;
   let shell: ClientChannel | null = null;
+  let sftpSession: SFTPWrapper | null = null;
   let tcpStream: CloudflareSocketDuplex | null = null;
   let currentLine = "";
   let shellSize: ShellSize = { cols: 80, rows: 24 };
+  const uploadStreams = new Map<string, NodeJS.WritableStream>();
+
+  const MAX_READ_SIZE = 2 * 1024 * 1024;
+  const MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024;
 
   if (!options.profile) {
     send({ type: "error", message: copy.noProfile });
@@ -73,6 +79,10 @@ export function createSshBridge(socket: WebSocket, options: SshBridgeOptions): S
               });
             }
           );
+          conn?.sftp((err, sftp) => {
+            if (err) return;
+            sftpSession = sftp;
+          });
         })
         .on("banner", (message) => send({ type: "output", data: `${message}\r\n` }))
         .on("error", (error) => send({ type: "error", message: `${copy.connectFailed}${error.message}` }))
@@ -132,7 +142,120 @@ export function createSshBridge(socket: WebSocket, options: SshBridgeOptions): S
     shell?.setWindow(rows, cols, rows * 16, cols * 8);
   }
 
+  function handleSftpLs(requestId: string, path: string) {
+    if (!sftpSession) return send({ type: "sftp-error", requestId, message: "SFTP 会话未就绪" });
+    try {
+      sftpSession.readdir(path, (err, list) => {
+        if (err) return send({ type: "sftp-error", requestId, message: err.message });
+        const files: RemoteFile[] = list
+          .map((item) => {
+            const parentPath = path.replace(/\/$/, "");
+            return {
+              name: item.filename,
+              path: `${parentPath}/${item.filename}`,
+              size: item.attrs.size,
+              type: (item.attrs.isDirectory() ? "directory" : "file") as RemoteFile["type"],
+              modifiedAt: new Date(item.attrs.mtime * 1000).toISOString()
+            };
+          })
+          .sort((a, b) => {
+            if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+        send({ type: "sftp-ls-result", requestId, files });
+      });
+    } catch (error) {
+      send({ type: "sftp-error", requestId, message: error instanceof Error ? error.message : "列目录失败" });
+    }
+  }
+
+  function handleSftpRead(requestId: string, path: string) {
+    if (!sftpSession) return send({ type: "sftp-error", requestId, message: "SFTP 会话未就绪" });
+    try {
+      sftpSession.stat(path, (statErr, stats) => {
+        if (statErr) return send({ type: "sftp-error", requestId, message: statErr.message });
+        if (stats.size > MAX_READ_SIZE) {
+          return send({ type: "sftp-error", requestId, message: "文件超过 2MB 限制，无法读取" });
+        }
+        sftpSession!.readFile(path, { encoding: "utf8" }, (err, content) => {
+          if (err) return send({ type: "sftp-error", requestId, message: err.message });
+          send({ type: "sftp-read-result", requestId, path, content: content as unknown as string });
+        });
+      });
+    } catch (error) {
+      send({ type: "sftp-error", requestId, message: error instanceof Error ? error.message : "读取文件失败" });
+    }
+  }
+
+  function handleSftpWrite(requestId: string, path: string, content: string) {
+    if (!sftpSession) return send({ type: "sftp-error", requestId, message: "SFTP 会话未就绪" });
+    try {
+      sftpSession.writeFile(path, content, { encoding: "utf8" }, (err) => {
+        if (err) return send({ type: "sftp-error", requestId, message: err.message });
+        send({ type: "sftp-write-result", requestId, ok: true });
+      });
+    } catch (error) {
+      send({ type: "sftp-error", requestId, message: error instanceof Error ? error.message : "写入文件失败" });
+    }
+  }
+
+  function handleSftpUpload(requestId: string, path: string, chunk: string, offset: number, done: boolean) {
+    if (!sftpSession) return send({ type: "sftp-error", requestId, message: "SFTP 会话未就绪" });
+    try {
+      if (offset === 0) {
+        const stream = sftpSession.createWriteStream(path);
+        uploadStreams.set(requestId, stream);
+        stream.on("error", (err: Error) => {
+          send({ type: "sftp-error", requestId, message: err.message });
+          uploadStreams.delete(requestId);
+        });
+      }
+      const stream = uploadStreams.get(requestId);
+      if (!stream) return send({ type: "sftp-error", requestId, message: "上传流未找到" });
+      if (chunk) {
+        const buf = Buffer.from(chunk, "base64");
+        stream.write(buf);
+      }
+      if (done) {
+        stream.end();
+        uploadStreams.delete(requestId);
+      }
+      send({ type: "sftp-upload-progress", requestId, offset, done });
+    } catch (error) {
+      uploadStreams.delete(requestId);
+      send({ type: "sftp-error", requestId, message: error instanceof Error ? error.message : "上传失败" });
+    }
+  }
+
+  function handleSftpDownload(requestId: string, path: string) {
+    if (!sftpSession) return send({ type: "sftp-error", requestId, message: "SFTP 会话未就绪" });
+    try {
+      sftpSession.stat(path, (statErr, stats) => {
+        if (statErr) return send({ type: "sftp-error", requestId, message: statErr.message });
+        if (stats.size > MAX_DOWNLOAD_SIZE) {
+          return send({ type: "sftp-error", requestId, message: "文件超过 100MB 限制，无法下载" });
+        }
+        const stream = sftpSession!.createReadStream(path);
+        stream.on("data", (data: Buffer) => {
+          send({ type: "sftp-download-chunk", requestId, chunk: Buffer.from(data).toString("base64"), done: false });
+        });
+        stream.on("end", () => {
+          send({ type: "sftp-download-chunk", requestId, chunk: "", done: true });
+        });
+        stream.on("error", (err: Error) => {
+          send({ type: "sftp-error", requestId, message: err.message });
+        });
+      });
+    } catch (error) {
+      send({ type: "sftp-error", requestId, message: error instanceof Error ? error.message : "下载失败" });
+    }
+  }
+
   function close() {
+    for (const stream of uploadStreams.values()) stream.end();
+    uploadStreams.clear();
+    sftpSession?.end();
+    sftpSession = null;
     shell?.end();
     shell = null;
     conn?.end();
@@ -145,8 +268,14 @@ export function createSshBridge(socket: WebSocket, options: SshBridgeOptions): S
     handleClientMessage(message) {
       if (message.type === "input") handleInput(message.data);
       if (message.type === "resize") handleResize(message.cols, message.rows);
+      if (message.type === "sftp-ls") handleSftpLs(message.requestId, message.path);
+      if (message.type === "sftp-read") handleSftpRead(message.requestId, message.path);
+      if (message.type === "sftp-write") handleSftpWrite(message.requestId, message.path, message.content);
+      if (message.type === "sftp-upload") handleSftpUpload(message.requestId, message.path, message.chunk, message.offset, message.done);
+      if (message.type === "sftp-download") handleSftpDownload(message.requestId, message.path);
     },
-    close
+    close,
+    get sftpSession() { return sftpSession; }
   };
 }
 

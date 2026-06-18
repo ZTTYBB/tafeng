@@ -12,12 +12,15 @@ type Props = {
   disconnectedLabel: string;
   onMetrics: (metrics: ServerMetrics, processes: ProcessInfo[]) => void;
   onCommandSubmitted?: () => void;
+  onSocketChange?: (socket: WebSocket | null) => void;
 };
 
-export function TerminalPane({ profileId, connectionAttempt, language, connectingLabel, disconnectedLabel, onMetrics, onCommandSubmitted }: Props) {
+export function TerminalPane({ profileId, connectionAttempt, language, connectingLabel, disconnectedLabel, onMetrics, onCommandSubmitted, onSocketChange }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const onSocketChangeRef = useRef(onSocketChange);
+  onSocketChangeRef.current = onSocketChange;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -51,6 +54,7 @@ export function TerminalPane({ profileId, connectionAttempt, language, connectin
     const terminal = terminalRef.current;
     if (!terminal) return;
     if (!profileId) {
+      onSocketChangeRef.current?.(null);
       socketRef.current?.close();
       socketRef.current = null;
       terminal.clear();
@@ -70,6 +74,7 @@ export function TerminalPane({ profileId, connectionAttempt, language, connectin
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "hello", profileId } satisfies TerminalMessage));
       socket.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows } satisfies TerminalMessage));
+      onSocketChangeRef.current?.(socket);
     });
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as TerminalMessage;
@@ -86,6 +91,7 @@ export function TerminalPane({ profileId, connectionAttempt, language, connectin
     });
 
     return () => {
+      onSocketChangeRef.current?.(null);
       inputDisposable.dispose();
       resizeDisposable.dispose();
       socket.close();
