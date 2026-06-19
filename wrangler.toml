@@ -14,6 +14,14 @@ type = "Data"
 globs = ["**/*.node"]
 fallthrough = true
 
+[[kv_namespaces]]
+binding = "TAFENG_KV"
+id = "cadb3fc3be2d4afdac6be26d6c8ed0cc"
+
+[[r2_buckets]]
+binding = "TAFENG_FILES"
+bucket_name = "tafeng-files"
+
 [assets]
 directory = "./dist/client"
 binding = "ASSETS"
